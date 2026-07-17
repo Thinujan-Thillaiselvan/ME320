@@ -1,0 +1,536 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "authorship_tag": "ABX9TyMjnQ/I3KjoGAFkfHHFDMh5",
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/Thinujan-Thillaiselvan/ME320/blob/main/%20coupled%20vibratory%20systems\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "QUESTION 1"
+      ],
+      "metadata": {
+        "id": "ZMff3sb63Gqs"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Problem Setup and Parameter Definition\n",
+        "To find the driving frequencies that cause violent vibrations (resonance), we need to determine the natural frequencies of the system. This is done by solving the eigenvalue problem for the undamped system:\n",
+        "$$ \\det(K - \\omega^2 M) = 0 $$\n",
+        "\n",
+        "First, we will import the necessary numerical libraries and define the given system parameters."
+      ],
+      "metadata": {
+        "id": "ebUdp9Nb2KnM"
+      }
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 3,
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "qNA81dRQ2Fhk",
+        "outputId": "ee5e0612-afb9-4ddb-f72c-c2ee742446ec"
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Calculated l1: 1.2870 m\n",
+            "Calculated l2: 1.3130 m\n"
+          ]
+        }
+      ],
+      "source": [
+        "import numpy as np\n",
+        "from scipy.linalg import eigvals\n",
+        "\n",
+        "# System Parameters\n",
+        "m = 1.6        # Mass (kg)\n",
+        "I = 0.14       # Mass moment of inertia (kg*m^2)\n",
+        "k = 1.9        # Spring stiffness (N/m)\n",
+        "l = 1.3        # Length (m)\n",
+        "\n",
+        "# Calculate derived lengths\n",
+        "epsilon = 0.01 * l\n",
+        "l1 = l - epsilon\n",
+        "l2 = l + epsilon\n",
+        "\n",
+        "print(f\"Calculated l1: {l1:.4f} m\")\n",
+        "print(f\"Calculated l2: {l2:.4f} m\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Constructing the Mass and Stiffness Matrices\n",
+        "Based on the equations of motion $M\\ddot{Y} + C\\dot{Y} + KY = F(t)$, we construct the mass matrix $M$ and the stiffness matrix $K$.\n",
+        "Since we are looking for the natural frequencies to determine resonance, we assume damping is negligible ($C \\approx 0$).\n",
+        "\n",
+        "$$ M = \\begin{bmatrix} m & 0 \\\\ 0 & I \\end{bmatrix} $$\n",
+        "$$ K = \\begin{bmatrix} 2k & -k(l_2 - l_1) \\\\ -k(l_2 - l_1) & k(l_1^2 + l_2^2) \\end{bmatrix} $$"
+      ],
+      "metadata": {
+        "id": "2mU0oGec2VQ7"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Construct Mass Matrix (M)\n",
+        "M = np.array([\n",
+        "    [m, 0],\n",
+        "    [0, I]\n",
+        "])\n",
+        "\n",
+        "# Construct Stiffness Matrix (K)\n",
+        "K = np.array([\n",
+        "    [2*k, -k*(l2 - l1)],\n",
+        "    [-k*(l2 - l1), k*(l1**2 + l2**2)]\n",
+        "])\n",
+        "\n",
+        "print(\"Mass Matrix (M):\")\n",
+        "print(M)\n",
+        "print(\"\\nStiffness Matrix (K):\")\n",
+        "print(K)"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "gURS3NjJ2XVj",
+        "outputId": "4b1ecf03-9d0a-4a26-acb4-77ec995bf531"
+      },
+      "execution_count": 4,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Mass Matrix (M):\n",
+            "[[1.6  0.  ]\n",
+            " [0.   0.14]]\n",
+            "\n",
+            "Stiffness Matrix (K):\n",
+            "[[ 3.8       -0.0494   ]\n",
+            " [-0.0494     6.4226422]]\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Solving for Natural Frequencies\n",
+        "We solve the generalized eigenvalue problem $K\\mathbf{v} = \\lambda M\\mathbf{v}$, where the eigenvalues $\\lambda$ represent the square of the natural frequencies ($\\lambda = \\omega^2$).\n",
+        "\n",
+        "We will calculate the eigenvalues, extract the natural frequencies, and identify the largest driving frequency that will cause violent vibrations."
+      ],
+      "metadata": {
+        "id": "GycztjIk2bqD"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Solve the generalized eigenvalue problem det(K - lambda*M) = 0\n",
+        "# Scipy's eigvals(A, B) solves det(A - lambda*B) = 0\n",
+        "eigenvalues = eigvals(K, M)\n",
+        "\n",
+        "# The eigenvalues are purely real for symmetric positive definite M and K\n",
+        "# We take the real part to drop the +0j imaginary artifact from the solver\n",
+        "omega_squared = np.real(eigenvalues)\n",
+        "\n",
+        "# Calculate natural frequencies (omega = sqrt(lambda))\n",
+        "omega = np.sqrt(omega_squared)\n",
+        "\n",
+        "# Find the maximum frequency\n",
+        "max_omega = np.max(omega)\n",
+        "\n",
+        "print(f\"Calculated Natural Frequencies (omega): {omega}\")\n",
+        "print(f\"\\nThe largest driving frequency for violent vibrations is: {max_omega:.4f} rad/s\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "bVTFCieo2gzF",
+        "outputId": "c66cb494-2163-425f-b12c-153a41d3b48b"
+      },
+      "execution_count": 5,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Calculated Natural Frequencies (omega): [1.54102225 6.77320206]\n",
+            "\n",
+            "The largest driving frequency for violent vibrations is: 6.7732 rad/s\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "QUESTION 2"
+      ],
+      "metadata": {
+        "id": "GflSCFsJ3J70"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Problem Setup and Parameter Definition\n",
+        "To find the driving frequencies that cause violent vibrations (resonance) in this 2-degree-of-freedom translational system, we need to determine its natural frequencies.\n",
+        "\n",
+        "Violent vibrations occur when the driving frequency $\\omega$ matches a natural frequency $\\omega_n$. Since damping is described as \"very small,\" we can assume $C \\approx 0$ and solve the eigenvalue problem for the undamped system:\n",
+        "$$ \\det(K - \\omega^2 M) = 0 $$\n",
+        "\n",
+        "First, let's import the necessary libraries and define the given parameters."
+      ],
+      "metadata": {
+        "id": "gzlcfJDV3MCr"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import numpy as np\n",
+        "from scipy.linalg import eigvals\n",
+        "\n",
+        "# System Parameters\n",
+        "m1 = 1.7       # Mass 1 (kg)\n",
+        "m2 = 1.4       # Mass 2 (kg)\n",
+        "k1 = 1.9       # Spring stiffness 1 (N/m)\n",
+        "k2 = 1.3       # Spring stiffness 2 (N/m)\n",
+        "k3 = 1.3       # Spring stiffness 3 (N/m)\n",
+        "\n",
+        "print(f\"Masses: m1 = {m1} kg, m2 = {m2} kg\")\n",
+        "print(f\"Stiffnesses: k1 = {k1} N/m, k2 = {k2} N/m, k3 = {k3} N/m\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "_6jnyvH03jp0",
+        "outputId": "7f0d4f74-d3c7-46bc-f769-4fb3e16c1db6"
+      },
+      "execution_count": 7,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Masses: m1 = 1.7 kg, m2 = 1.4 kg\n",
+            "Stiffnesses: k1 = 1.9 N/m, k2 = 1.3 N/m, k3 = 1.3 N/m\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Constructing the Mass and Stiffness Matrices\n",
+        "Based on the provided equations, we construct the mass matrix $M$ and the stiffness matrix $K$.\n",
+        "\n",
+        "*Note: While the generic formula in the image shows $M = \\begin{bmatrix} m & 0 \\\\ 0 & m \\end{bmatrix}$, specific values for $m_1$ and $m_2$ are given at the bottom. We will construct a general diagonal mass matrix using these specific values.*\n",
+        "\n",
+        "$$ M = \\begin{bmatrix} m_1 & 0 \\\\ 0 & m_2 \\end{bmatrix} $$\n",
+        "$$ K = \\begin{bmatrix} k_1 + k_2 & -k_2 \\\\ -k_2 & k_2 + k_3 \\end{bmatrix} $$"
+      ],
+      "metadata": {
+        "id": "98S4iZI_3lAb"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Construct Mass Matrix (M)\n",
+        "M = np.array([\n",
+        "    [m1, 0],\n",
+        "    [0, m2]\n",
+        "])\n",
+        "\n",
+        "# Construct Stiffness Matrix (K)\n",
+        "K = np.array([\n",
+        "    [k1 + k2, -k2],\n",
+        "    [-k2, k2 + k3]\n",
+        "])\n",
+        "\n",
+        "print(\"Mass Matrix (M):\")\n",
+        "print(M)\n",
+        "print(\"\\nStiffness Matrix (K):\")\n",
+        "print(K)"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "fgCGZBjo3m5j",
+        "outputId": "ae1836ac-0eb0-4a93-af35-3db4aab732d5"
+      },
+      "execution_count": 8,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Mass Matrix (M):\n",
+            "[[1.7 0. ]\n",
+            " [0.  1.4]]\n",
+            "\n",
+            "Stiffness Matrix (K):\n",
+            "[[ 3.2 -1.3]\n",
+            " [-1.3  2.6]]\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Solving for Natural Frequencies\n",
+        "We solve the generalized eigenvalue problem $K\\mathbf{v} = \\lambda M\\mathbf{v}$, where the eigenvalues $\\lambda$ represent the square of the natural frequencies ($\\lambda = \\omega^2$).\n",
+        "\n",
+        "We will compute the eigenvalues, convert them to natural frequencies in rad/s, and extract the largest value to answer the question."
+      ],
+      "metadata": {
+        "id": "SaCeox4q3qOr"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Solve the generalized eigenvalue problem det(K - lambda*M) = 0\n",
+        "eigenvalues = eigvals(K, M)\n",
+        "\n",
+        "# The eigenvalues are purely real for symmetric positive definite M and K matrices\n",
+        "# We take the real part to drop the +0j imaginary artifact from the SciPy solver\n",
+        "omega_squared = np.real(eigenvalues)\n",
+        "\n",
+        "# Calculate natural frequencies (omega = sqrt(lambda))\n",
+        "omega = np.sqrt(omega_squared)\n",
+        "\n",
+        "# Find the maximum frequency\n",
+        "max_omega = np.max(omega)\n",
+        "\n",
+        "print(f\"Calculated Natural Frequencies (omega): {omega}\")\n",
+        "print(f\"\\nThe largest driving frequency for violent vibrations is: {max_omega:.4f} rad/s\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "3qJcdbE33tFz",
+        "outputId": "b256a356-2bb5-4f43-aa36-ef1fb5c5b735"
+      },
+      "execution_count": 9,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Calculated Natural Frequencies (omega): [1.64696904 1.01340455]\n",
+            "\n",
+            "The largest driving frequency for violent vibrations is: 1.6470 rad/s\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "QUESTION 3"
+      ],
+      "metadata": {
+        "id": "jEOP4GJj4U4T"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Problem Setup and Parameter Definition\n",
+        "To find the driving frequencies that cause violent vibrations (resonance) in this vertical 2-degree-of-freedom system, we need to determine its natural frequencies.\n",
+        "\n",
+        "Violent vibrations occur when the driving frequency $\\omega$ matches a natural frequency $\\omega_n$. Since damping is described as \"very small,\" we assume $C \\approx 0$ and solve the eigenvalue problem for the undamped system:\n",
+        "$$ \\det(K - \\omega^2 M) = 0 $$\n",
+        "\n",
+        "First, let's import the necessary libraries and define the given parameters."
+      ],
+      "metadata": {
+        "id": "5xY-3L2C4Wxc"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import numpy as np\n",
+        "from scipy.linalg import eigvals\n",
+        "\n",
+        "# System Parameters\n",
+        "m1 = 1.7       # Mass 1 (kg)\n",
+        "m2 = 1.1       # Mass 2 (kg)\n",
+        "k1 = 1.8       # Spring stiffness 1 (N/m)\n",
+        "k2 = 1.4       # Spring stiffness 2 (N/m)\n",
+        "\n",
+        "print(f\"Masses: m1 = {m1} kg, m2 = {m2} kg\")\n",
+        "print(f\"Stiffnesses: k1 = {k1} N/m, k2 = {k2} N/m\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "ISp9wrvN4ZZr",
+        "outputId": "725b0410-b450-495b-a71d-5ce69f8821a6"
+      },
+      "execution_count": 10,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Masses: m1 = 1.7 kg, m2 = 1.1 kg\n",
+            "Stiffnesses: k1 = 1.8 N/m, k2 = 1.4 N/m\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Constructing the Mass and Stiffness Matrices\n",
+        "Based on the provided equations of motion, we construct the mass matrix $M$ and the stiffness matrix $K$.\n",
+        "\n",
+        "$$ M = \\begin{bmatrix} m_1 & 0 \\\\ 0 & m_2 \\end{bmatrix} $$\n",
+        "$$ K = \\begin{bmatrix} k_1 + k_2 & -k_2 \\\\ -k_2 & k_2 \\end{bmatrix} $$"
+      ],
+      "metadata": {
+        "id": "P4trltiV4b87"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Construct Mass Matrix (M)\n",
+        "M = np.array([\n",
+        "    [m1, 0],\n",
+        "    [0, m2]\n",
+        "])\n",
+        "\n",
+        "# Construct Stiffness Matrix (K)\n",
+        "K = np.array([\n",
+        "    [k1 + k2, -k2],\n",
+        "    [-k2, k2]\n",
+        "])\n",
+        "\n",
+        "print(\"Mass Matrix (M):\")\n",
+        "print(M)\n",
+        "print(\"\\nStiffness Matrix (K):\")\n",
+        "print(K)"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "nUZBvs-g4fML",
+        "outputId": "850309c1-500d-4c1d-e312-6f3df6f2dbf0"
+      },
+      "execution_count": 11,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Mass Matrix (M):\n",
+            "[[1.7 0. ]\n",
+            " [0.  1.1]]\n",
+            "\n",
+            "Stiffness Matrix (K):\n",
+            "[[ 3.2 -1.4]\n",
+            " [-1.4  1.4]]\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Solving for Natural Frequencies\n",
+        "We solve the generalized eigenvalue problem $K\\mathbf{v} = \\lambda M\\mathbf{v}$, where the eigenvalues $\\lambda$ represent the square of the natural frequencies ($\\lambda = \\omega^2$).\n",
+        "\n",
+        "We will compute the eigenvalues, convert them to natural frequencies in rad/s, and extract the largest value to find the answer."
+      ],
+      "metadata": {
+        "id": "u8V7SjTA4iUr"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Solve the generalized eigenvalue problem det(K - lambda*M) = 0\n",
+        "eigenvalues = eigvals(K, M)\n",
+        "\n",
+        "# The eigenvalues are purely real for symmetric positive definite matrices\n",
+        "# We take the real part to drop the +0j imaginary artifact from the SciPy solver\n",
+        "omega_squared = np.real(eigenvalues)\n",
+        "\n",
+        "# Calculate natural frequencies (omega = sqrt(lambda))\n",
+        "omega = np.sqrt(omega_squared)\n",
+        "\n",
+        "# Find the maximum frequency\n",
+        "max_omega = np.max(omega)\n",
+        "\n",
+        "print(f\"Calculated Natural Frequencies (omega): {omega}\")\n",
+        "print(f\"\\nThe largest driving frequency for violent vibrations is: {max_omega:.4f} rad/s\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "Ksb0b7jB4jhr",
+        "outputId": "72b7611f-f1a3-46c1-f9dc-a0884cd8cd09"
+      },
+      "execution_count": 12,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Calculated Natural Frequencies (omega): [1.62657139 0.71368462]\n",
+            "\n",
+            "The largest driving frequency for violent vibrations is: 1.6266 rad/s\n"
+          ]
+        }
+      ]
+    }
+  ]
+}
